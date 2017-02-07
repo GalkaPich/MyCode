@@ -1,0 +1,88 @@
+﻿require 'open-uri'
+require 'nokogiri'
+require 'uri'
+require 'csv'
+
+begin
+puts 'Ссылка на страницу категории:'
+url=gets.chomp
+puts 'Имя файла в который будет записан результат:'
+filename=gets.chomp+".csv"
+end while (url !~ URI::regexp)||(filename.empty?)
+
+# создаём массив для хранения цены и веса товаров, собираем необходимую информацию
+goods=[]
+#хранит адрес страницы категории
+nextPageUrl=url
+isNextPage=true
+
+#проход по всем страницам, пока есть следующая
+  while isNextPage==true
+    
+html=open(nextPageUrl)
+doc=Nokogiri::HTML(html)
+
+#поиск следующей страницы
+bottonPart = doc.xpath('//*[@id="pagination_next_bottom"]/a').to_s
+badUrl = bottonPart.slice(/p=[0-9]*/)
+            
+unless badUrl.nil?
+nextPageUrl=url.to_s+"?"+badUrl
+end
+              
+if badUrl==nil
+   isNextPage=false
+end
+
+#ссылки на все товары
+allGoods=[]
+#достаём все ссылки на товары со страницы  и собираем в массив
+list = doc.xpath("//div[@class='productlist']")
+allGoods=list.xpath('//a[@class="product-name"]/@ href').to_html.strip.split
+allGoods.slice!(0..3)
+
+allGoodsUrl=[]
+allGoods.each{|e| 
+  allGoodsUrl.push(e.slice(/http.*(?=\")/))
+}
+
+#блок собирает инфу о всех товарах со страницы
+allGoodsUrl.each{|i|  
+  
+html2=open(i.to_s)
+doc2=Nokogiri::HTML(html2)
+ 
+  #достаём картинку
+  goodImage=(doc2.xpath('//img[@id="bigpic"]/@src').map(&:value))
+  
+  #достаём название
+  goodName=doc2.xpath('//img[@id="bigpic"]/@ title').map(&:value)
+  
+  #достаём высовку и цену
+  doc2.xpath('//*[@class = "attribute_list"]/*' ).each do |element| 
+  goodWeight=element.search('span.attribute_name').text.strip
+  goodPrice=element.search('span.attribute_price').text.strip
+  fullName=goodName.to_s+"-"+goodWeight.to_s
+
+  
+    unless goodWeight==""||goodPrice==""     
+      goods.push({
+        name: fullName,
+        price: goodPrice,
+        image: goodImage
+      })
+    end
+  end
+}   
+end 
+    
+#записываем в csv-файл
+CSV.open(filename, 'w', write_headers: true, headers: goods.first.keys) do |csv|
+  goods.each do |man|
+    csv << man.values
+  end
+end
+
+
+
+
